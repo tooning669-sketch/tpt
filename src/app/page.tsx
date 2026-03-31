@@ -51,6 +51,7 @@ export default function Home() {
     renderFromScratch,
     renderIntoTemplate,
     getTemplateTags,
+    loadPresetTemplate,
     addNewPage,
     switchPage,
     deleteCurrentPage,
@@ -139,6 +140,10 @@ export default function Home() {
     }
   }, [savedTemplates, initFirstPage, loadJSON, addToast]);
 
+  const handleLoadPreset = useCallback((presetId: string) => {
+    loadPresetTemplate(presetId);
+  }, [loadPresetTemplate]);
+
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       <Header
@@ -157,6 +162,7 @@ export default function Home() {
           onGenerate={handleGenerate}
           onSaveTemplate={handleSaveTemplate}
           onLoadTemplate={handleLoadTemplate}
+          onLoadPreset={handleLoadPreset}
           onAddText={addText}
           onAddShape={addShape}
           onAddImage={addImage}

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '@/store/useAppStore';
-import { Sparkles, Upload, FileText, X, Settings } from 'lucide-react';
+import { Sparkles, Upload, FileText, X, Settings, LayoutGrid, Columns2, AlignJustify } from 'lucide-react';
 import { getDecryptedKey } from '@/lib/crypto';
 
 interface AIPanelProps {
@@ -261,6 +261,34 @@ export default function AIPanel({ onGenerate, onSaveTemplate }: AIPanelProps) {
             className="px-2.5 py-2 rounded-xl border text-xs outline-none transition-smooth focus:ring-2 focus:ring-[var(--accent)]/30"
             style={selectStyle}
           />
+        </div>
+
+        {/* Layout Style */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+            📐 Layout Style
+          </label>
+          <div className="grid grid-cols-3 gap-1.5">
+            {([
+              { value: 'single-column' as const, icon: AlignJustify, label: '1 Column' },
+              { value: 'two-columns' as const, icon: Columns2, label: '2 Columns' },
+              { value: 'grid-2x3' as const, icon: LayoutGrid, label: 'Grid 2×3' },
+            ]).map((layout) => (
+              <button
+                key={layout.value}
+                onClick={() => setGenerationParams({ layoutStyle: layout.value })}
+                className="flex flex-col items-center gap-1 py-2 rounded-lg border transition-smooth"
+                style={{
+                  borderColor: generationParams.layoutStyle === layout.value ? 'var(--accent)' : 'var(--border)',
+                  background: generationParams.layoutStyle === layout.value ? 'rgba(108, 92, 231, 0.12)' : 'var(--bg-tertiary)',
+                  color: generationParams.layoutStyle === layout.value ? 'var(--accent)' : 'var(--text-muted)',
+                }}
+              >
+                <layout.icon size={16} />
+                <span className="text-[9px] font-semibold">{layout.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Divider */}

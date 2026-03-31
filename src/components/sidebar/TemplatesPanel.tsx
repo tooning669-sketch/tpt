@@ -2,13 +2,15 @@
 
 import React from 'react';
 import { useAppStore } from '@/store/useAppStore';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Crown } from 'lucide-react';
+import { PRESET_TEMPLATES } from '@/lib/presetTemplates';
 
 interface TemplatesPanelProps {
   onLoadTemplate: (templateId: string | null) => void;
+  onLoadPreset: (presetId: string) => void;
 }
 
-export default function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps) {
+export default function TemplatesPanel({ onLoadTemplate, onLoadPreset }: TemplatesPanelProps) {
   const {
     savedTemplates,
     selectedTemplateId,
@@ -19,6 +21,11 @@ export default function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps) 
   const handleSelect = (id: string | null) => {
     setSelectedTemplateId(id);
     onLoadTemplate(id);
+  };
+
+  const handlePresetSelect = (presetId: string) => {
+    setSelectedTemplateId(null);
+    onLoadPreset(presetId);
   };
 
   return (
@@ -41,6 +48,66 @@ export default function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps) 
 
       {/* Template Grid */}
       <div className="flex-1 overflow-y-auto p-3">
+        {/* ── Built-in TPT Templates ─── */}
+        <div className="mb-4">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Crown size={12} style={{ color: 'var(--warning)' }} />
+            <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+              Built-in Templates
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {PRESET_TEMPLATES.map((preset) => (
+              <button
+                key={preset.id}
+                onClick={() => handlePresetSelect(preset.id)}
+                className="flex flex-col items-center gap-1.5 p-2 rounded-xl border-2 transition-all duration-200 hover:scale-[1.02] relative"
+                style={{
+                  borderColor: 'var(--border)',
+                  background: 'var(--bg-tertiary)',
+                }}
+              >
+                {/* Badge */}
+                <div
+                  className="absolute -top-1.5 -right-1 px-1.5 py-0.5 rounded-full text-[7px] font-bold uppercase tracking-wider z-10"
+                  style={{
+                    background: preset.badge === 'Best Seller' ? 'var(--warning)' : 'var(--accent)',
+                    color: preset.badge === 'Best Seller' ? '#333' : '#fff',
+                  }}
+                >
+                  {preset.badge}
+                </div>
+
+                {/* Preview */}
+                <div
+                  className="w-full aspect-[8.5/11] rounded-lg flex flex-col items-center justify-center gap-1"
+                  style={{ background: '#ffffff', border: '1px solid var(--border)' }}
+                >
+                  <span className="text-2xl">{preset.icon}</span>
+                  <span className="text-[8px] font-semibold" style={{ color: '#666' }}>
+                    {preset.name}
+                  </span>
+                </div>
+                <span
+                  className="text-[9px] font-semibold truncate w-full text-center"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  {preset.name}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Separator ─── */}
+        <div className="h-px my-3" style={{ background: 'var(--border)' }} />
+
+        {/* ── Custom Templates ─── */}
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+            My Templates
+          </span>
+        </div>
         <div className="grid grid-cols-2 gap-2">
           {/* Blank Template */}
           <button
@@ -125,7 +192,7 @@ export default function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps) 
             className="text-[11px] text-center mt-4 px-2"
             style={{ color: 'var(--text-muted)' }}
           >
-            No templates saved yet. Generate a worksheet, then save it as a template.
+            No custom templates yet. Generate a worksheet, then save it as a template.
           </p>
         )}
       </div>

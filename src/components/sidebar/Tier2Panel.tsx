@@ -12,6 +12,7 @@ interface Tier2PanelProps {
   onGenerate: () => void;
   onSaveTemplate: () => void;
   onLoadTemplate: (templateId: string | null) => void;
+  onLoadPreset: (presetId: string) => void;
   onAddText: (preset: 'heading' | 'subheading' | 'body') => void;
   onAddShape: (shape: string) => void;
   onAddImage: (url: string) => void;
@@ -21,6 +22,7 @@ export default function Tier2Panel({
   onGenerate,
   onSaveTemplate,
   onLoadTemplate,
+  onLoadPreset,
   onAddText,
   onAddShape,
   onAddImage,
@@ -30,7 +32,7 @@ export default function Tier2Panel({
   const renderPanel = () => {
     switch (activeSidebarTab) {
       case 'templates':
-        return <TemplatesPanel onLoadTemplate={onLoadTemplate} />;
+        return <TemplatesPanel onLoadTemplate={onLoadTemplate} onLoadPreset={onLoadPreset} />;
       case 'ai':
         return (
           <AIPanel

@@ -46,10 +46,19 @@ Question type: ${questionType || 'multiple choice'}.
 ${colorInstruction}
 ${contextBlock}
 
+MATH FORMATTING RULES:
+- For fractions, use LaTeX notation: \\frac{1}{2}, \\frac{3}{4}
+- For exponents, use: x^{2}, 3^{4}
+- For square roots, use: \\sqrt{16}, \\sqrt{x}
+- For multiplication use \\times, for division use \\div
+- For comparison operators use \\leq, \\geq, \\neq
+- These will be automatically converted to beautiful Unicode display.
+
 IMPORTANT: You MUST respond with a valid JSON object and NOTHING else. No markdown, no code blocks, no explanation.
 Format: {"title": "Worksheet Title Here", "questions": [{"id": 1, "question": "...", "answer": "..."}]}
 
-Generate a compelling, descriptive title and unique questions appropriate for the specified grade level and subject.`;
+Generate a compelling, descriptive title and unique questions appropriate for the specified grade level and subject.
+Each question should be self-contained and clearly worded.`;
     }
 
     let result;

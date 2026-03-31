@@ -3,6 +3,8 @@
 import { useRef, useCallback, useEffect } from 'react';
 import { Canvas, Textbox, Rect, Line, FabricImage, FabricObject, Point } from 'fabric';
 import { useAppStore } from '@/store/useAppStore';
+import { processQuestionText } from '@/lib/mathRenderer';
+import { applyPresetToCanvas } from '@/lib/presetTemplates';
 import jsPDF from 'jspdf';
 
 // US Letter at 96 DPI
@@ -14,6 +16,83 @@ const CUSTOM_PROPS = ['tag'] as const;
 const MARGIN_LEFT = 60;
 const MARGIN_RIGHT = 60;
 const CONTENT_WIDTH = CANVAS_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
+
+// Layout constants
+const CONTENT_START_Y = 170;
+const BOTTOM_MARGIN = 60;
+const MAX_Y = CANVAS_HEIGHT - BOTTOM_MARGIN;
+const COLUMN_GAP = 24;
+
+// ── Layout Position Calculator ─────────────────────────
+interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  maxHeight: number;
+}
+
+type LayoutStyle = 'single-column' | 'two-columns' | 'grid-2x3';
+
+function calculateLayoutPositions(
+  layout: LayoutStyle,
+  itemCount: number,
+  startY: number = CONTENT_START_Y
+): BoundingBox[] {
+  const boxes: BoundingBox[] = [];
+  const availableHeight = MAX_Y - startY;
+
+  switch (layout) {
+    case 'single-column': {
+      const itemHeight = Math.min(availableHeight / itemCount, 120);
+      for (let i = 0; i < itemCount; i++) {
+        boxes.push({
+          x: MARGIN_LEFT,
+          y: startY + i * itemHeight,
+          width: CONTENT_WIDTH,
+          maxHeight: itemHeight - 8,
+        });
+      }
+      break;
+    }
+
+    case 'two-columns': {
+      const colWidth = (CONTENT_WIDTH - COLUMN_GAP) / 2;
+      const rows = Math.ceil(itemCount / 2);
+      const rowHeight = Math.min(availableHeight / rows, 140);
+      for (let i = 0; i < itemCount; i++) {
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        boxes.push({
+          x: MARGIN_LEFT + col * (colWidth + COLUMN_GAP),
+          y: startY + row * rowHeight,
+          width: colWidth,
+          maxHeight: rowHeight - 8,
+        });
+      }
+      break;
+    }
+
+    case 'grid-2x3': {
+      const colWidth = (CONTENT_WIDTH - COLUMN_GAP) / 2;
+      const rows = 3;
+      const rowHeight = availableHeight / rows;
+      for (let i = 0; i < itemCount; i++) {
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        if (row >= rows) break;
+        boxes.push({
+          x: MARGIN_LEFT + col * (colWidth + COLUMN_GAP),
+          y: startY + row * rowHeight,
+          width: colWidth,
+          maxHeight: rowHeight - 8,
+        });
+      }
+      break;
+    }
+  }
+
+  return boxes;
+}
 
 export function useCanvas() {
   const canvasRef = useRef<Canvas | null>(null);
@@ -171,6 +250,7 @@ export function useCanvas() {
         fill: getTextColor('title'),
         textAlign: 'center',
         editable: true,
+        splitByGrapheme: true,
       });
       (title as any).tag = 'title_text';
       canvas.add(title);
@@ -204,11 +284,11 @@ export function useCanvas() {
       (sep as any).tag = 'header_separator';
       canvas.add(sep);
 
-      // Name field
-      const nameLine = new Textbox('Name: _______________________________', {
+      // Name field — BALANCED width
+      const nameLine = new Textbox('Name: ________________________________________', {
         left: MARGIN_LEFT,
         top: 115,
-        width: CONTENT_WIDTH / 2 - 10,
+        width: CONTENT_WIDTH * 0.55,
         fontSize: 13,
         fontWeight: '500',
         fontFamily: 'Inter',
@@ -218,11 +298,11 @@ export function useCanvas() {
       (nameLine as any).tag = 'name_field';
       canvas.add(nameLine);
 
-      // Date field
-      const dateLine = new Textbox('Date: ________________', {
-        left: CANVAS_WIDTH / 2 + 20,
+      // Date field — BALANCED width
+      const dateLine = new Textbox('Date: ____________________________', {
+        left: MARGIN_LEFT + CONTENT_WIDTH * 0.58,
         top: 115,
-        width: CONTENT_WIDTH / 2 - 10,
+        width: CONTENT_WIDTH * 0.42,
         fontSize: 13,
         fontWeight: '500',
         fontFamily: 'Inter',
@@ -298,8 +378,7 @@ export function useCanvas() {
     const newPage = { id: `page-${Date.now()}`, json: newJson, thumbnail: newThumb };
     addPage(newPage);
 
-    // Switch to new page
-    const newIndex = pages.length; // pages hasn't updated yet in this sync context
+    const newIndex = pages.length;
     setActivePageIndex(newIndex);
     saveState();
     addToast({ type: 'info', message: `Page ${newIndex + 1} added` });
@@ -311,12 +390,10 @@ export function useCanvas() {
       if (!canvas || targetIndex === activePageIndex) return;
       if (targetIndex < 0 || targetIndex >= pages.length) return;
 
-      // Save current
       const currentJson = getCurrentCanvasJSON();
       const currentThumb = getCurrentCanvasThumbnail();
       updatePageData(activePageIndex, { json: currentJson, thumbnail: currentThumb });
 
-      // Load target
       const target = pages[targetIndex];
       if (target && target.json) {
         isUndoRedo.current = true;
@@ -348,7 +425,6 @@ export function useCanvas() {
     setPages(newPages);
     setActivePageIndex(newIndex);
 
-    // Load the new active page
     const target = newPages[newIndex];
     if (target && target.json) {
       isUndoRedo.current = true;
@@ -361,11 +437,41 @@ export function useCanvas() {
     addToast({ type: 'info', message: 'Page deleted' });
   }, [pages, activePageIndex, setPages, setActivePageIndex, saveState, addToast]);
 
-  // ─── AI Rendering: Scratch Mode ────────────────────────
+  // ─── Grid Guide Lines ─────────────────────────────────
+  const addGridGuides = useCallback(
+    (canvas: Canvas, layout: LayoutStyle, itemCount: number) => {
+      if (layout === 'single-column') return; // no grid guides for single column
+
+      const boxes = calculateLayoutPositions(layout, itemCount);
+      boxes.forEach((box, idx) => {
+        const guideRect = new Rect({
+          left: box.x,
+          top: box.y,
+          width: box.width,
+          height: box.maxHeight,
+          fill: 'transparent',
+          stroke: colorMode === 'color' ? 'rgba(108, 92, 231, 0.15)' : 'rgba(0, 0, 0, 0.06)',
+          strokeWidth: 1,
+          strokeDashArray: [4, 4],
+          selectable: false,
+          evented: false,
+          rx: 4,
+          ry: 4,
+        });
+        (guideRect as any).tag = `grid_guide_${idx}`;
+        canvas.add(guideRect);
+      });
+    },
+    [colorMode]
+  );
+
+  // ─── AI Rendering: Scratch Mode (with Layout) ─────────
   const renderFromScratch = useCallback(
     (title: string, items: { id: number; question: string; answer: string }[]) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
+
+      const layoutStyle = useAppStore.getState().generationParams.layoutStyle;
 
       canvas.clear();
       canvas.backgroundColor = '#ffffff';
@@ -377,80 +483,28 @@ export function useCanvas() {
         titleObj.set('text', title);
       }
 
-      // Layout constants
-      const CONTENT_START_Y = 170;
-      const BOTTOM_MARGIN = 60;
-      const MAX_Y = CANVAS_HEIGHT - BOTTOM_MARGIN;
+      // Add grid guides for multi-column layouts
+      addGridGuides(canvas, layoutStyle, items.length);
+
+      // Calculate positions based on layout
+      const boxes = calculateLayoutPositions(layoutStyle, items.length);
+
       const BADGE_SIZE = 28;
       const BADGE_GAP = 12;
-      const QUESTION_TEXT_WIDTH = CONTENT_WIDTH - BADGE_SIZE - BADGE_GAP;
-      const ITEM_PADDING = 16;        // padding between items
-      const ANSWER_LINE_GAP = 8;      // gap between question text bottom and answer line
-      const ANSWER_LINE_TO_NEXT = 14; // gap after answer line before next item
-
-      let yOffset = CONTENT_START_Y;
-      let pageItemCount = 0;
+      const ANSWER_LINE_GAP = 8;
 
       items.forEach((item, idx) => {
-        const badgeLeft = MARGIN_LEFT;
-        const textLeft = MARGIN_LEFT + BADGE_SIZE + BADGE_GAP;
+        if (idx >= boxes.length) return;
+        const box = boxes[idx];
+        const questionTextWidth = box.width - BADGE_SIZE - BADGE_GAP;
 
-        // Create textbox temporarily to measure its real height
-        const qText = new Textbox(item.question, {
-          left: textLeft,
-          top: yOffset + 3,
-          width: QUESTION_TEXT_WIDTH,
-          fontSize: 14,
-          fontWeight: '500',
-          fontFamily: 'Inter',
-          fill: getTextColor('question'),
-          editable: true,
-        });
-        // Force Fabric to calculate dimensions
-        qText.initDimensions();
-        const textHeight = qText.height || 20;
-
-        // Calculate total item height: max(badge, text) + answer line gap + answer line + padding
-        const itemBlockHeight = Math.max(BADGE_SIZE, textHeight + 3) + ANSWER_LINE_GAP + ANSWER_LINE_TO_NEXT;
-
-        // Check for page overflow — if not the first item and we'd overflow, start a new page
-        if (pageItemCount > 0 && yOffset + itemBlockHeight > MAX_Y) {
-          // Save current page and create new one
-          canvas.renderAll();
-          const json = getCurrentCanvasJSON();
-          const thumb = getCurrentCanvasThumbnail();
-          if (pageItemCount === items.length - idx) {
-            // First page
-            updatePageData(activePageIndex, { json, thumbnail: thumb });
-          } else {
-            updatePageData(activePageIndex, { json, thumbnail: thumb });
-          }
-
-          // Create new page
-          canvas.clear();
-          canvas.backgroundColor = '#ffffff';
-          createDefaultPageObjects(canvas);
-
-          // Update title on new page
-          const newTitleObj = canvas.getObjects().find((o: any) => o.tag === 'title_text');
-          if (newTitleObj && newTitleObj instanceof Textbox) {
-            newTitleObj.set('text', `${title} (cont.)`);
-          }
-
-          const newJson = getCurrentCanvasJSON();
-          const newThumb = getCurrentCanvasThumbnail();
-          const newPage = { id: `page-${Date.now()}-${idx}`, json: newJson, thumbnail: newThumb };
-          addPage(newPage);
-          setActivePageIndex(useAppStore.getState().pages.length - 1);
-
-          yOffset = CONTENT_START_Y;
-          pageItemCount = 0;
-        }
+        // Process math notation → Unicode
+        const displayText = processQuestionText(item.question);
 
         // Question number badge
         const badge = new Rect({
-          left: badgeLeft,
-          top: yOffset,
+          left: box.x,
+          top: box.y,
           width: BADGE_SIZE,
           height: BADGE_SIZE,
           rx: 8,
@@ -463,8 +517,8 @@ export function useCanvas() {
         canvas.add(badge);
 
         const badgeNum = new Textbox(`${idx + 1}`, {
-          left: badgeLeft + 2,
-          top: yOffset + 4,
+          left: box.x + 2,
+          top: box.y + 4,
           width: BADGE_SIZE - 4,
           fontSize: 14,
           fontWeight: '700',
@@ -477,14 +531,31 @@ export function useCanvas() {
         });
         canvas.add(badgeNum);
 
-        // Question text — already measured, just add it
+        // Question text — with word wrap and width clamp
+        const textLeft = box.x + BADGE_SIZE + BADGE_GAP;
+        const qText = new Textbox(displayText, {
+          left: textLeft,
+          top: box.y + 3,
+          width: questionTextWidth,
+          fontSize: 14,
+          fontWeight: '500',
+          fontFamily: 'Inter',
+          fill: getTextColor('question'),
+          editable: true,
+          splitByGrapheme: true, // Fix: wrap even without spaces
+        });
         (qText as any).tag = `question_${item.id}_text`;
+        qText.initDimensions();
         canvas.add(qText);
 
-        // Answer line — positioned dynamically below the actual text height
-        const answerLineY = yOffset + 3 + textHeight + ANSWER_LINE_GAP;
+        // Answer line — below question text, clamped to bounding box
+        const textHeight = qText.height || 20;
+        const answerLineY = Math.min(
+          box.y + 3 + textHeight + ANSWER_LINE_GAP,
+          box.y + box.maxHeight - 10
+        );
         const aLine = new Line(
-          [textLeft, answerLineY, CANVAS_WIDTH - MARGIN_RIGHT, answerLineY],
+          [textLeft, answerLineY, box.x + box.width, answerLineY],
           {
             stroke: getTextColor('line'),
             strokeWidth: 0.8,
@@ -495,21 +566,17 @@ export function useCanvas() {
         );
         (aLine as any).tag = `answer_${item.id}_line`;
         canvas.add(aLine);
-
-        // Advance Y by the actual measured height
-        yOffset += itemBlockHeight + ITEM_PADDING;
-        pageItemCount++;
       });
 
       canvas.renderAll();
 
-      // Save final page
+      // Save page
       const json = getCurrentCanvasJSON();
       const thumb = getCurrentCanvasThumbnail();
       updatePageData(useAppStore.getState().activePageIndex, { json, thumbnail: thumb });
       saveState();
     },
-    [createDefaultPageObjects, colorMode, getTextColor, getCurrentCanvasJSON, getCurrentCanvasThumbnail, updatePageData, activePageIndex, saveState, addPage, setActivePageIndex]
+    [createDefaultPageObjects, colorMode, getTextColor, getCurrentCanvasJSON, getCurrentCanvasThumbnail, updatePageData, saveState, addGridGuides]
   );
 
   // ─── AI Rendering: Template Replace Mode ───────────────
@@ -518,7 +585,6 @@ export function useCanvas() {
       const canvas = canvasRef.current;
       if (!canvas) return;
 
-      // Load template
       const template = savedTemplates.find((t) => t.id === selectedTemplateId);
       if (!template) {
         addToast({ type: 'error', message: 'Template not found' });
@@ -527,12 +593,11 @@ export function useCanvas() {
 
       isUndoRedo.current = true;
       canvas.loadFromJSON(template.json).then(() => {
-        // Replace tagged text objects
         const objects = canvas.getObjects();
         replacements.forEach((r) => {
           const target = objects.find((o: any) => o.tag === r.tag);
           if (target && target instanceof Textbox) {
-            target.set('text', r.new_content);
+            target.set('text', processQuestionText(r.new_content));
           }
         });
 
@@ -546,6 +611,23 @@ export function useCanvas() {
       });
     },
     [savedTemplates, selectedTemplateId, getCurrentCanvasJSON, getCurrentCanvasThumbnail, updatePageData, activePageIndex, saveState, addToast]
+  );
+
+  // ─── Load Preset Template ─────────────────────────────
+  const loadPresetTemplate = useCallback(
+    (presetId: string) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      applyPresetToCanvas(canvas, presetId);
+
+      const json = getCurrentCanvasJSON();
+      const thumb = getCurrentCanvasThumbnail();
+      updatePageData(useAppStore.getState().activePageIndex, { json, thumbnail: thumb });
+      saveState();
+      addToast({ type: 'success', message: 'Loaded preset template!' });
+    },
+    [getCurrentCanvasJSON, getCurrentCanvasThumbnail, updatePageData, saveState, addToast]
   );
 
   // ─── Collect Tags from Template ────────────────────────
@@ -588,6 +670,7 @@ export function useCanvas() {
         fontFamily: 'Inter',
         fill: config.fill,
         editable: true,
+        splitByGrapheme: true,
       });
       canvas.add(textbox);
       canvas.setActiveObject(textbox);
@@ -750,7 +833,6 @@ export function useCanvas() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Save current page first
     const currentJson = getCurrentCanvasJSON();
     const currentThumb = getCurrentCanvasThumbnail();
     updatePageData(activePageIndex, { json: currentJson, thumbnail: currentThumb });
@@ -773,7 +855,6 @@ export function useCanvas() {
       }
     }
 
-    // Restore original page
     const origPage = pagesSnapshot[activePageIndex];
     if (origPage?.json) {
       isUndoRedo.current = true;
@@ -815,6 +896,7 @@ export function useCanvas() {
     exportJSON, loadJSON, getThumbnail,
     exportHighResPNG, exportAllPagesPDF,
     renderFromScratch, renderIntoTemplate, getTemplateTags,
+    loadPresetTemplate,
     addNewPage, switchPage, deleteCurrentPage,
     getCurrentCanvasJSON, getCurrentCanvasThumbnail,
     CANVAS_WIDTH, CANVAS_HEIGHT,

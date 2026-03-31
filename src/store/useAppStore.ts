@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 export type AIProvider = 'openai' | 'gemini' | 'claude';
 export type ColorMode = 'bw' | 'color';
+export type LayoutStyle = 'single-column' | 'two-columns' | 'grid-2x3';
 export type SidebarTab = 'templates' | 'ai' | 'uploads' | 'text' | 'shapes';
 
 export interface Toast {
@@ -15,6 +16,7 @@ export interface GenerationParams {
   gradeLevel: string;
   questionType: string;
   numberOfQuestions: number;
+  layoutStyle: LayoutStyle;
 }
 
 export interface SavedTemplate {
@@ -149,6 +151,7 @@ export const useAppStore = create<AppState>((set) => ({
     gradeLevel: '3',
     questionType: 'multiple-choice',
     numberOfQuestions: 6,
+    layoutStyle: 'single-column',
   },
   colorMode: 'bw',
   selectedTemplateId: null,
